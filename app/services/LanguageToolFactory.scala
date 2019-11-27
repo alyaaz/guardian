@@ -17,7 +17,7 @@ class LanguageToolFactory(
                            maybeLanguageModelDir: Option[File],
                            useLanguageModelRules: Boolean = false) {
 
-  def createInstance(category: String, rules: List[LTRule])(implicit ec: ExecutionContext): (Matcher, List[String]) = {
+  def createInstance(category: String, rules: List[LTRule]): (Matcher, List[String]) = {
     val language: Language = Languages.getLanguageForShortCode("en")
     val cache: ResultCache = new ResultCache(10000)
     val userConfig: UserConfig = new UserConfig()
@@ -30,11 +30,11 @@ class LanguageToolFactory(
     }
 
     // Disable all default rules by ... default
-    instance.getCategories().asScala.foreach((categoryData) => instance.disableCategory(categoryData._1))
+    instance.getCategories.asScala.foreach(categoryData => instance.disableCategory(categoryData._1))
 
     // Add the rules provided in the config
 
-    Logger.info(s"Adding ${rules.size} rules to matcher instance ${category}")
+    Logger.info(s"Adding ${rules.size} rules to matcher instance $category")
     val ruleIngestionErrors = rules.flatMap { rule =>
       try {
         instance.addRule(LTRule.toLT(rule))
@@ -51,12 +51,12 @@ class LanguageToolFactory(
   }
 }
 
-class LanguageTool(category: String, instance: JLanguageTool)(implicit ec: ExecutionContext) extends Matcher {
+class LanguageTool(category: String, instance: JLanguageTool) extends Matcher {
   def getId = "language-tool"
 
   def getCategory = category
 
-  def check(request: MatcherRequest): Future[List[RuleMatch]] = {
+  def check(request: MatcherRequest)(implicit ec: ExecutionContext): Future[List[RuleMatch]] = {
     Future {
       request.blocks.flatMap { block =>
         instance.check(block.text).asScala.map(RuleMatch.fromLT).toList.map { ruleMatch =>

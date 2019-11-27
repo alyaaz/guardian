@@ -13,4 +13,6 @@ GET     /rules                      controllers.RulesController.rules
 
 + NOCSRF
 POST    /check                      controllers.ApiController.check
++ NOCSRF
+POST    /checkStream                      controllers.ApiController.checkStream
 GET     /categories                 controllers.ApiController.getCurrentCategories

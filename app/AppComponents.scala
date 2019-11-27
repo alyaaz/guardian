@@ -1,12 +1,17 @@
 import java.io.File
 
+import akka.actor.ActorSystem
+import akka.dispatch.MessageDispatcher
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Materializer}
+
 import scala.concurrent.Future
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.auth.{AWSCredentialsProviderChain, InstanceProfileCredentialsProvider}
 import com.gu.{AppIdentity, AwsIdentity}
 import controllers.{ApiController, HomeController, RulesController}
 import play.api.ApplicationLoader.Context
-import play.api.BuiltInComponentsFromContext
+import play.api.{BuiltInComponentsFromContext, Configuration}
+import play.api.libs.concurrent.ActorSystemProvider
 import play.api.mvc.EssentialFilter
 import play.filters.HttpFiltersComponents
 import play.filters.cors.CORSComponents
@@ -36,20 +41,21 @@ class AppComponents(context: Context, identity: AppIdentity)
     new ElkLogging(awsIdentity, loggingStreamName, awsCredentialsProvider, applicationLifecycle)
   }
 
-  val ngramPath: Option[File] = configuration.getOptional[String]("typerighter.ngramPath").map(new File(_))
-  val languageToolFactory = new LanguageToolFactory(ngramPath)
-  val matcherPoolDispatcher = actorSystem.dispatchers.lookup("matcher-pool-dispatcher")
-  val matcherPool = new MatcherPool()(matcherPoolDispatcher, materializer)
+  private val ngramPath: Option[File] = configuration.getOptional[String]("typerighter.ngramPath").map(new File(_))
+  private val languageToolFactory = new LanguageToolFactory(ngramPath)
+  private val matchDispatcherName = "matcher-pool-dispatcher"
+  private val matcherDispatcher = actorSystem.dispatchers.lookup(matchDispatcherName)
+  private val matcherMaterializer = ActorMaterializer(ActorMaterializerSettings(actorSystem).withDispatcher(matchDispatcherName))(actorSystem)
+  private val matcherPool = new MatcherPool()(matcherDispatcher, matcherMaterializer)
 
-  val credentials = configuration.get[String]("typerighter.google.credentials")
-  val spreadsheetId = configuration.get[String]("typerighter.sheetId")
-  val range = configuration.get[String]("typerighter.sheetRange")
-  val ruleResource = new SheetsRuleResource(credentials, spreadsheetId, range)
+  private val credentials = configuration.get[String]("typerighter.google.credentials")
+  private val spreadsheetId = configuration.get[String]("typerighter.sheetId")
+  private val range = configuration.get[String]("typerighter.sheetRange")
+  private val ruleResource = new SheetsRuleResource(credentials, spreadsheetId, range)
 
-
-  val apiController = new ApiController(controllerComponents, matcherPool)
-  val rulesController = new RulesController(controllerComponents, matcherPool, languageToolFactory, ruleResource, spreadsheetId)
-  val homeController = new HomeController(controllerComponents)
+  private val apiController = new ApiController(controllerComponents, matcherPool)
+  private val rulesController = new RulesController(controllerComponents, matcherPool, languageToolFactory, ruleResource, spreadsheetId)
+  private val homeController = new HomeController(controllerComponents)
 
   initialiseMatchers
 

@@ -1,15 +1,21 @@
 package services
 
 import model.{RegexRule, RuleMatch}
+import play.api.Logger
 import utils.Matcher
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 
 class RegexMatcher(category: String, rules: List[RegexRule]) extends Matcher {
   def getId() = "regex-validator"
 
-  override def check(request: MatcherRequest): Future[List[RuleMatch]] = {
-    Future.successful(rules.flatMap { checkRule(request, _) })
+  override def check(request: MatcherRequest)(implicit ec: ExecutionContext): Future[List[RuleMatch]] = {
+    Future {
+      Logger.info(s"Running regex matcher ${request.blocks.map(_.id).mkString(",")} on thread ${Thread.currentThread().getName}")
+      rules.flatMap {
+        checkRule(request, _)
+      }
+    }
   }
 
   override def getRules(): List[RegexRule] = rules

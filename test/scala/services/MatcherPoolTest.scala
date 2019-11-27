@@ -8,7 +8,6 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.time.SpanSugar._
 import utils.Matcher
 
-import scala.collection.mutable.ListBuffer
 import scala.concurrent.{ExecutionContext, Promise}
 
 /**
@@ -16,14 +15,14 @@ import scala.concurrent.{ExecutionContext, Promise}
   * complete work until markAsComplete is called, to test
   * queue behaviour.
   */
-class MockMatcher(id: Int) extends Matcher {
+class MockMatcher (id: Int) extends Matcher {
   private var currentWork: Option[Promise[List[RuleMatch]]] = None
   private var currentResponses:  Option[List[RuleMatch]] = None
   def getId = s"mock-matcher-$id"
   def getCategory = s"mock-category-$id"
   def getRules = List.empty
 
-  def check(request: MatcherRequest) = {
+  def check(request: MatcherRequest)(implicit ec: ExecutionContext) = {
     val promise = Promise[List[RuleMatch]]
     val future = promise.future
     currentWork = Some(promise)
@@ -119,27 +118,27 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
     val futureResult = pool.check(getCheck(text = "Example text"))
     matchers.head.markAsComplete(responses)
     futureResult.map { result =>
-      result shouldBe responses
+      result.matches shouldBe responses
     }
   }
 
-  "check" should "complete queued jobs" in {
+  it should "complete queued jobs" in {
     val matchers = getMatchers(24)
     val pool = getPool(matchers)
     val futureResult = pool.check(getCheck(text = "Example text"))
     matchers.foreach(_.markAsComplete(responses))
     ScalaFutures.whenReady(futureResult) { result =>
-      result.length shouldBe 24
+      result.matches.length shouldBe 24
     }
   }
 
-  "check" should "reject work that exceeds its buffer size" in {
+  it should "reject work that exceeds its buffer size" in {
     val matchers = getMatchers(1)
     // This check should produce a job for each block, filling the queue.
     val checkWithManyBlocks = Check(
       setId,
       None,
-      (0 to 100).toList.map { id => TextBlock(id.toString, "Example text", 0, 12) });
+      (0 to 100).toList.map { id => TextBlock(id.toString, "Example text", 0, 12) })
     val pool = getPool(matchers, 1, 1, MatcherPool.blockLevelCheckStrategy)
     val futureResult = pool.check(checkWithManyBlocks)
     matchers.foreach(_.markAsComplete(responses))
@@ -148,7 +147,7 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
     }
   }
 
-  "check" should "handle validation failures" in {
+  it should "handle validation failures" in {
     val matchers = getMatchers(2)
     val pool = getPool(matchers)
     val futureResult = pool.check(getCheck(text = "Example text"))
@@ -160,34 +159,12 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
     }
   }
 
-  "check" should "handle requests for categories that do not exist" in {
+  it should "handle requests for categories that do not exist" in {
     val matchers = getMatchers(2)
     val pool = getPool(matchers)
     val futureResult = pool.check(getCheck("Example text", Some(List("category-id-does-not-exist"))))
     ScalaFutures.whenReady(futureResult.failed) { e =>
       e.getMessage should include("unknown category")
-    }
-  }
-
-  "check" should "emit events when validations are complete" in {
-    val matchers = getMatchers(2)
-    val pool = getPool(matchers)
-    var events = ListBuffer.empty[MatcherPoolEvent]
-    val subscriber = MatcherPoolSubscriber("set-id", (e: MatcherPoolEvent) => {
-      events += e
-      ()
-    })
-    pool.subscribe(subscriber)
-    val check = getCheck("Example text")
-    val futureResult = pool.check(check)
-    matchers.foreach(_.markAsComplete(responses))
-    ScalaFutures.whenReady(futureResult) { _ =>
-    val categories = matchers.map {_.getCategory}
-      events.toList shouldBe List(
-        MatcherPoolResultEvent(setId, MatcherResponse(check.blocks, List(categories(0)), responses)),
-        MatcherPoolResultEvent(setId, MatcherResponse(check.blocks, List(categories(1)), responses)),
-        MatcherPoolJobsCompleteEvent(setId)
-      )
     }
   }
 }

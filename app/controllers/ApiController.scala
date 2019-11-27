@@ -1,6 +1,7 @@
 package controllers
 
 import model.{Check, MatcherResponse}
+import play.api.Logger
 import play.api.libs.json.{JsValue, Json}
 import play.api.mvc._
 import services._
@@ -19,17 +20,22 @@ class ApiController(
       case Right(check) =>
         matcherPool
           .check(check)
-          .map { matches =>
-            val response = MatcherResponse(
-              matches = matches,
-              blocks = check.blocks,
-              categoryIds = check.categoryIds.getOrElse(matcherPool.getCurrentCategories.map { _._1 })
-            )
-            Ok(Json.toJson(response))
-          } recover {
-          case e: Exception =>
-            InternalServerError(Json.obj("error" -> e.getMessage))
-        }
+          .map(response => Ok(Json.toJson(response))) recover {
+            case e: Exception =>
+              InternalServerError(Json.obj("error" -> e.getMessage))
+          }
+      case Left(error) =>
+        Future.successful(BadRequest(s"Invalid request: $error"))
+    }
+  }
+
+  def checkStream: Action[JsValue] = Action.async(parse.json) { request =>
+    request.body.validate[Check].asEither match {
+      case Right(check) =>
+        Future.successful(Ok.chunked(
+          matcherPool.checkStream(check, MatcherPool.blockLevelCheckStrategy)
+            .map(r => Json.toJson(r))
+        ))
       case Left(error) =>
         Future.successful(BadRequest(s"Invalid request: $error"))
     }
