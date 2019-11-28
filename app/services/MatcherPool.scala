@@ -3,18 +3,16 @@ package services
 import java.util.concurrent.ConcurrentHashMap
 
 import akka.NotUsed
-
-import scala.collection.JavaConverters._
-import scala.concurrent.{Await, ExecutionContext, Future, Promise}
-import play.api.Logger
-import model.{BaseRule, Category, Check, MatcherResponse, RuleMatch, TextBlock}
-import utils.Matcher
 import akka.stream.QueueOfferResult.{Dropped, Enqueued, QueueClosed, Failure => QueueFailure}
 import akka.stream._
-import akka.stream.scaladsl.{BroadcastHub, Sink, Source}
+import akka.stream.scaladsl.{Sink, Source}
+import model._
+import play.api.Logger
 import services.MatcherPool.CheckStrategy
+import utils.Matcher
 
-import scala.concurrent.duration.Duration
+import scala.collection.JavaConverters._
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 case class MatcherRequest(blocks: List[TextBlock], categoryId: String)
 
@@ -56,15 +54,11 @@ object MatcherPool {
 }
 
 class MatcherPool(val maxCurrentJobs: Int = 8, val maxQueuedJobs: Int = 1000, val defaultCheckStrategy: MatcherPool.CheckStrategy = MatcherPool.documentPerCategoryCheckStrategy)(implicit ec: ExecutionContext, implicit val mat: Materializer) {
-  type JobProgressMap = Map[String, Int]
 
   private val matchers = new ConcurrentHashMap[String, (Category, Matcher)]().asScala
-  private val eventBus = new MatcherPoolEventBus()
   private val queue = Source.queue[MatcherJob](maxQueuedJobs, OverflowStrategy.dropNew)
-    .async
     .mapAsyncUnordered(maxCurrentJobs)(runValidationJob)
-    .async
-    .to(Sink.fold(Map[String, Int]())(markJobAsComplete))
+    .to(Sink.ignore) // throw away result
     .run()
 
   def getMaxCurrentValidations: Int = maxCurrentJobs
@@ -121,16 +115,6 @@ class MatcherPool(val maxCurrentJobs: Int = 8, val maxQueuedJobs: Int = 1000, va
       )
     }
   }
-
-  /**
-    * @see MatcherPoolEventBus
-    */
-  def subscribe(subscriber: MatcherPoolSubscriber): Boolean = eventBus.subscribe(subscriber, subscriber.requestId)
-
-  /**
-    * @see MatcherPoolEventBus
-    */
-  def unsubscribe(subscriber: MatcherPoolSubscriber): Boolean = eventBus.unsubscribe(subscriber, subscriber.requestId)
 
   /**
     * Add a matcher to the pool of matchers for the given category.
@@ -200,36 +184,6 @@ class MatcherPool(val maxCurrentJobs: Int = 8, val maxQueuedJobs: Int = 1000, va
     Future.sequence(jobResults).map { results =>
       MatcherJobResult(job, results.flatten)
     }
-  }
-
-  private def markJobAsComplete(progressMap: Map[String, Int], result: MatcherJobResult): JobProgressMap = {
-    val newCount = progressMap.get(result.job.requestId) match {
-      case Some(jobCount) => jobCount - 1
-      case None => result.job.jobsInValidationSet - 1
-    }
-
-    publishResults(result)
-
-    if (newCount == 0) {
-      publishJobsComplete(result.job.requestId)
-    }
-
-    progressMap + (result.job.requestId -> newCount)
-  }
-
-  private def publishResults(result: MatcherJobResult): Unit = {
-    eventBus.publish(MatcherPoolResultEvent(
-      result.job.requestId,
-      MatcherResponse(
-        result.job.blocks,
-        result.job.categoryIds,
-        result.matches
-      )
-    ))
-  }
-
-  private def publishJobsComplete(requestId: String): Unit = {
-    eventBus.publish(MatcherPoolJobsCompleteEvent(requestId))
   }
 
   private def getJobMessage(job: MatcherJob) = s"with blocks: ${getJobBlockIdsAsString(job)} for categories: ${job.categoryIds.mkString(", ")}"
