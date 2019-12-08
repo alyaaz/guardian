@@ -1,5 +1,6 @@
 package controllers
 
+import akka.stream.scaladsl.{Flow, Sink, Source}
 import model.{Check, MatcherResponse}
 import play.api.Logger
 import play.api.libs.json.{JsValue, Json}
@@ -39,6 +40,16 @@ class ApiController(
       case Left(error) =>
         Future.successful(BadRequest(s"Invalid request: $error"))
     }
+  }
+
+  def checkWs = WebSocket.accept[JsValue, JsValue] { request =>
+    // Just ignore the input
+    val in = Sink.ignore
+
+    // Send a single 'Hello!' message and close
+    val out = Source.single("Hello!")
+
+    Flow.fromSinkAndSource(in, out)
   }
 
   def getCurrentCategories: Action[AnyContent] = Action {
