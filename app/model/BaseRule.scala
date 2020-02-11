@@ -22,3 +22,11 @@ object BaseRule {
     "replacement" -> rule.replacement
   )
 }
+
+case class Rule(
+  id: String,
+  category: Category,
+  description: String,
+  suggestions: List[Suggestion],
+  replacement: Option[TextSuggestion]) extends BaseRule
+
