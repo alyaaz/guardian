@@ -93,7 +93,9 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
           rule = responseRule,
           fromPos = from,
           toPos = to,
-          message = message
+          matchedText = "placeholder text",
+          message = message,
+          matchContext = "[placeholder text]"
         )
     }
   }
@@ -102,6 +104,7 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
   private val blockId = "block-id"
 
   private def getCheck(text: String, categoryIds: Option[List[String]] = None) = Check(
+    Some("example-document"),
     setId,
     categoryIds,
     List(TextBlock(blockId, text, 0, text.length)))
@@ -110,6 +113,20 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
     val matchers = getMatchers(1)
     val pool = getPool(matchers)
     pool.getCurrentCategories should be(List(("mock-matcher-0", getCategory(0))))
+  }
+
+  "removeMatcherByCategory" should "remove a matcher by its category id" in {
+    val matchers = getMatchers(2)
+    val pool = getPool(matchers)
+    pool.removeMatcherByCategory(matchers(1).getCategory())
+    pool.getCurrentCategories should be(List(("mock-matcher-0", getCategory(0))))
+  }
+
+  "removeMatcherByCategory" should "remove all matchers" in {
+    val matchers = getMatchers(2)
+    val pool = getPool(matchers)
+    pool.removeAllMatchers
+    pool.getCurrentCategories should be(List.empty)
   }
 
   "check" should "return a list of MatcherResponses" in {
@@ -136,6 +153,7 @@ class MatcherPoolTest extends AsyncFlatSpec with Matchers {
     val matchers = getMatchers(1)
     // This check should produce a job for each block, filling the queue.
     val checkWithManyBlocks = Check(
+      Some("example-document"),
       setId,
       None,
       (0 to 100).toList.map { id => TextBlock(id.toString, "Example text", 0, 12) })

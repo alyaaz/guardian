@@ -1,21 +1,21 @@
-package services
+package matchers
 
 import java.io.File
 
-import org.languagetool._
-import org.languagetool.rules.{Rule => LanguageToolRule}
-import org.languagetool.rules.spelling.morfologik.suggestions_ordering.SuggestionsOrdererConfig
-
-import collection.JavaConverters._
-import scala.concurrent.{ExecutionContext, Future}
-import play.api.Logger
 import model.{LTRule, RuleMatch}
-import org.languagetool.rules.CategoryId
+import org.languagetool._
+import org.languagetool.rules.spelling.morfologik.suggestions_ordering.SuggestionsOrdererConfig
+import org.languagetool.rules.{CategoryId, Rule => LanguageToolRule}
+import play.api.Logging
+import services.MatcherRequest
 import utils.Matcher
+
+import scala.collection.JavaConverters._
+import scala.concurrent.{ExecutionContext, Future}
 
 class LanguageToolFactory(
                            maybeLanguageModelDir: Option[File],
-                           useLanguageModelRules: Boolean = false) {
+                           useLanguageModelRules: Boolean = false) extends Logging {
 
   def createInstance(category: String, rules: List[LTRule]): (Matcher, List[String]) = {
     val language: Language = Languages.getLanguageForShortCode("en")
@@ -34,7 +34,7 @@ class LanguageToolFactory(
 
     // Add the rules provided in the config
 
-    Logger.info(s"Adding ${rules.size} rules to matcher instance $category")
+    logger.info(s"Adding ${rules.size} rules to matcher instance $category")
     val ruleIngestionErrors = rules.flatMap { rule =>
       try {
         instance.addRule(LTRule.toLT(rule))
@@ -47,11 +47,14 @@ class LanguageToolFactory(
     }
     instance.enableRuleCategory(new CategoryId(category))
 
-    (new LanguageTool(category, instance), ruleIngestionErrors)
+    (new LanguageToolMatcher(category, instance), ruleIngestionErrors)
   }
 }
 
-class LanguageTool(category: String, instance: JLanguageTool) extends Matcher {
+/**
+  * A Matcher that wraps a LanguageTool instance.
+  */
+class LanguageToolMatcher(category: String, instance: JLanguageTool) extends Matcher {
   def getId = "language-tool"
 
   def getCategory = category
@@ -59,7 +62,7 @@ class LanguageTool(category: String, instance: JLanguageTool) extends Matcher {
   def check(request: MatcherRequest)(implicit ec: ExecutionContext): Future[List[RuleMatch]] = {
     Future {
       request.blocks.flatMap { block =>
-        instance.check(block.text).asScala.map(RuleMatch.fromLT).toList.map { ruleMatch =>
+        instance.check(block.text).asScala.map(RuleMatch.fromLT(_, block)).toList.map { ruleMatch =>
           ruleMatch.copy(
             fromPos = ruleMatch.fromPos + block.from,
             toPos = ruleMatch.toPos + block.from

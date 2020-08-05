@@ -1,5 +1,7 @@
 package controllers
 
+import matchers.{LanguageToolFactory, RegexMatcher}
+import com.gu.pandomainauth.PublicSettings
 import model.{Category, RegexRule}
 import play.api.mvc._
 import rules.SheetsRuleResource
@@ -10,8 +12,13 @@ import scala.concurrent.ExecutionContext
 /**
  * The controller that handles the management of matcher rules.
  */
-class RulesController(cc: ControllerComponents, matcherPool: MatcherPool, languageToolFactory: LanguageToolFactory, ruleResource: SheetsRuleResource, sheetId: String)(implicit ec: ExecutionContext)  extends AbstractController(cc) {
-  def refresh = Action.async { implicit request: Request[AnyContent] =>
+class RulesController(cc: ControllerComponents, matcherPool: MatcherPool, ruleResource: SheetsRuleResource, sheetId: String, val publicSettings: PublicSettings)(implicit ec: ExecutionContext)
+  extends AbstractController(cc) with PandaAuthentication {
+  def refresh = ApiAuthAction.async { implicit request: Request[AnyContent] =>
+
+    // This reset will need to be revisited when we're ingesting from multiple matchers.
+    matcherPool.removeAllMatchers()
+
     for {
       (rulesByCategory, ruleErrors) <- ruleResource.fetchRulesByCategory()
       errorsByCategory = addMatcherToPool(rulesByCategory)
@@ -28,7 +35,7 @@ class RulesController(cc: ControllerComponents, matcherPool: MatcherPool, langua
     }
   }
 
-  def rules = Action { implicit request: Request[AnyContent] =>
+  def rules = ApiAuthAction { implicit request: Request[AnyContent] =>
     Ok(views.html.rules(
       sheetId,
       matcherPool.getCurrentRules,
