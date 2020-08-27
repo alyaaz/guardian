@@ -106,7 +106,7 @@ class MatcherPool(val maxCurrentJobs: Int = 8, val maxQueuedJobs: Int = 1000, va
 
   def check(query: Check): Future[MatcherResponse] = check(query, checkStrategy)
 
-  def checkStream(query: Check, checkStrategy: CheckStrategy): Source[MatcherResponse, NotUsed] = {
+  def checkStream(query: Check): Source[MatcherResponse, NotUsed] = {
     val categoryIds = query.categoryIds match {
       case None => getCurrentCategories.map { case (_, category) => category.id }
       case Some(ids) => ids
