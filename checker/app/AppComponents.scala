@@ -85,7 +85,7 @@ class AppComponents(context: Context, identity: AppIdentity, creds: AWSCredentia
   val spreadsheetId = configuration.get[String]("typerighter.sheetId")
   val sheetsRuleManager = new SheetsRuleManager(credentials, spreadsheetId, matcherPool, languageToolFactory)
 
-  val apiController = new ApiController(controllerComponents, matcherPool, publicSettings)
+  val apiController = new ApiController(controllerComponents, matcherPool, publicSettings)(executionContext, materializer, actorSystem)
   val rulesController = new RulesController(controllerComponents, matcherPool, sheetsRuleManager, bucketRuleManager, spreadsheetId, ruleProvisioner, publicSettings)
   val homeController = new HomeController(controllerComponents, publicSettings)
   val auditController = new AuditController(controllerComponents, publicSettings)

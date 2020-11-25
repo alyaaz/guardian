@@ -14,6 +14,8 @@ import scala.concurrent.{ExecutionContext, Future}
 import play.api.libs.streams.ActorFlow
 import utils.Timer
 import net.logstash.logback.marker.Markers
+import akka.stream.Materializer
+import akka.actor.ActorSystem
 
 /**
   * The controller that handles API requests.
@@ -22,7 +24,7 @@ class ApiController(
   cc: ControllerComponents,
   matcherPool: MatcherPool,
   val publicSettings: PublicSettings
-)(implicit ec: ExecutionContext) extends AbstractController(cc) with PandaAuthentication {
+)(implicit ec: ExecutionContext, mat: Materializer, system: ActorSystem) extends AbstractController(cc) with PandaAuthentication {
 
   def check: Action[JsValue] = ApiAuthAction.async(parse.json) { request =>
     request.body.validate[Check].asEither match {

@@ -19,6 +19,7 @@ import play.api.Logging
 import utils.Timer
 import utils.CloudWatchClient
 import utils.Metrics
+import akka.NotUsed
 
 case class MatcherRequest(blocks: List[TextBlock])
 
@@ -75,7 +76,6 @@ class MatcherPool(
   type MatcherId = String
   type CategoryId = String
   private val matchers = new ConcurrentHashMap[MatcherId, Matcher]().asScala
-  private val eventBus = new MatcherPoolEventBus()
 
   // This supervision strategy resumes the stream when `mapAsyncUnordered`
   // emits failed futures. Without it, the stream fails when errors occur. See
@@ -85,7 +85,7 @@ class MatcherPool(
   private val queue = Source.queue[MatcherJob](maxQueuedJobs, OverflowStrategy.dropNew)
     .mapAsyncUnordered(maxCurrentJobs)(getMatchesForJob)
     .withAttributes(supervisionStrategy)
-    .to(Sink.fold(Map[String, Int]())(markJobAsComplete))
+    .to(Sink.ignore)
     .run()
 
   def getMaxCurrentValidations: Int = maxCurrentJobs
@@ -118,9 +118,9 @@ class MatcherPool(
     }
   }
 
-    def checkStream(query: Check): Source[MatcherResponse, NotUsed] = {
+    def checkStream(query: Check): Source[(Set[CategoryId], List[RuleMatch]), NotUsed] = {
       val categoryIds = query.categoryIds match {
-        case None => getCurrentCategories.map { case (_, category) => category.id }
+        case None => getCurrentCategories.map(_.id)
         case Some(ids) => ids
       }
 
@@ -132,24 +132,10 @@ class MatcherPool(
       val eventualResponses = jobs map offerJobToQueue
       val responseStream = Source(eventualResponses).mapAsyncUnordered(1)(identity)
 
-      responseStream.map { result =>
-        MatcherResponse(
-          result.job.blocks,
-          result.job.categoryIds,
-          result.matches
-        )
+      responseStream.map { matchesPerFuture =>
+        (categoryIds, matchesPerFuture)
       }
     }
-
-  /**
-    * @see MatcherPoolEventBus
-    */
-  def subscribe(subscriber: MatcherPoolSubscriber): Boolean = eventBus.subscribe(subscriber, subscriber.requestId)
-
-  /**
-    * @see MatcherPoolEventBus
-    */
-  def unsubscribe(subscriber: MatcherPoolSubscriber): Boolean = eventBus.unsubscribe(subscriber, subscriber.requestId)
 
   /**
     * Add a matcher to the pool of matchers.
@@ -293,38 +279,5 @@ class MatcherPool(
         case (_, matches) => RuleMatchHelpers.removeOverlappingRules(acc, matches) ++ matches
       }
     )
-  }
-
-  private def markJobAsComplete(progressMap: Map[String, Int], result: (MatcherJob, List[RuleMatch])): JobProgressMap = {
-    result match {
-      case (job, matches) =>
-        val newCount = progressMap.get(job.requestId) match {
-          case Some(jobCount) => jobCount - 1
-          case None => job.jobsInValidationSet - 1
-        }
-
-        publishResults(job, matches)
-
-        if (newCount == 0) {
-          publishJobsComplete(job.requestId)
-        }
-
-        progressMap + (job.requestId -> newCount)
-    }
-  }
-
-  private def publishResults(job: MatcherJob, results: List[RuleMatch]): Unit = {
-    eventBus.publish(MatcherPoolResultEvent(
-      job.requestId,
-      MatcherResponse(
-        job.blocks,
-        job.categoryIds,
-        results
-      )
-    ))
-  }
-
-  private def publishJobsComplete(requestId: String): Unit = {
-    eventBus.publish(MatcherPoolJobsCompleteEvent(requestId))
   }
 }
