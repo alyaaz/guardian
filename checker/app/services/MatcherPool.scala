@@ -9,7 +9,7 @@ import scala.collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
-import model.{BaseRule, Category, Check, MatcherResponse, RuleMatch, TextBlock}
+import model.{BaseRule, Category, Check, CheckResult, MatcherResponse, RuleMatch, TextBlock}
 import utils.{Matcher, RuleMatchHelpers}
 import akka.stream.QueueOfferResult.{Dropped, QueueClosed, Failure => QueueFailure}
 import akka.stream._
@@ -114,11 +114,11 @@ class MatcherPool(
 
     Future.sequence(eventuallyResponses).map { matchesPerFuture =>
       logger.info(s"Matcher pool query complete")(query.toMarker)
-      (categoryIds, matchesPerFuture.flatten)
+      (categoryIds, matchesPerFuture.map(_._2).flatten)
     }
   }
 
-    def checkStream(query: Check): Source[(Set[CategoryId], List[RuleMatch]), NotUsed] = {
+  def checkStream(query: Check): Source[CheckResult, NotUsed] = {
       val categoryIds = query.categoryIds match {
         case None => getCurrentCategories.map(_.id)
         case Some(ids) => ids
@@ -129,11 +129,11 @@ class MatcherPool(
       val jobs = createJobsFromPartialJobs(query.requestId, query.documentId.getOrElse("no-document-id"), checkStrategy(query.blocks, categoryIds))
       logger.info(s"Created ${jobs.size} jobs")
 
-      val eventualResponses = jobs map offerJobToQueue
+      val eventualResponses = jobs.map(offerJobToQueue)
       val responseStream = Source(eventualResponses).mapAsyncUnordered(1)(identity)
 
-      responseStream.map { matchesPerFuture =>
-        (categoryIds, matchesPerFuture)
+      responseStream.map {
+        case (job, matches) => CheckResult(job.categoryIds, job.blocks, matches)
       }
     }
 
@@ -172,7 +172,7 @@ class MatcherPool(
     MatcherJob(requestId, documentId, partialJob.blocks, partialJob.categoryIds, promise, partialJobs.length)
   }
 
-  private def offerJobToQueue(job: MatcherJob): Future[List[RuleMatch]] = {
+  private def offerJobToQueue(job: MatcherJob): Future[(MatcherJob, List[RuleMatch])] = {
     logger.info(s"Job has been offered to the queue")(job.toMarker)
 
     queue.offer(job).collect {
@@ -184,11 +184,9 @@ class MatcherPool(
         failJobWith(job, s"Job failed, reason: ${err.getMessage}")
     }
 
-    job.promise.future.map {
-      case result => {
-        logger.info("Job is complete")(job.toMarker)
-        result
-      }
+    job.promise.future.map { result =>
+      logger.info("Job is complete")(job.toMarker)
+      (job, result)
     }
   }
 

@@ -3,7 +3,7 @@ package model
 import play.api.libs.json._
 
 case class MatcherError(error: String, id: Option[String] = None) {
-  val `type` = "VALIDATOR_ERROR"
+  val `type` = "MATCHER_ERROR"
 }
 
 object MatcherError {

@@ -3,7 +3,7 @@ package model
 import play.api.libs.json._
 
 case class MatcherResponse(blocks: List[TextBlock], categoryIds: Set[String], matches: List[RuleMatch]) {
-  val `type` = "VALIDATOR_RESPONSE"
+  val `type` = "MATCHER_RESPONSE"
 }
 
 object MatcherResponse {
@@ -15,4 +15,7 @@ object MatcherResponse {
       "matches" -> response.matches
     )
   }
+
+  def fromCheckResult(result: CheckResult) =
+    MatcherResponse(result.blocks, result.categoryIds, result.matches)
 }

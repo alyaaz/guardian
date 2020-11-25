@@ -4,6 +4,10 @@ import scala.collection.JavaConverters._
 import net.logstash.logback.marker.Markers
 import play.api.libs.json.{Json, Reads}
 
+object Check {
+  implicit val reads: Reads[Check] = Json.reads[Check]
+}
+
 case class Check(
   documentId: Option[String],
   requestId: String,
@@ -18,7 +22,4 @@ case class Check(
   ).asJava)
 }
 
-
-object Check {
-  implicit val reads: Reads[Check] = Json.reads[Check]
-}
+case class CheckResult(categoryIds: Set[String], blocks: List[TextBlock], matches: List[RuleMatch])
