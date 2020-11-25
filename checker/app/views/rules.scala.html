@@ -1,0 +1,98 @@
+@import model.BaseRule
+@import model.RegexRule
+@import model.LTRule
+@import model.Category
+@import utils.Matcher
+@import helper._
+
+@(sheetId: String, rules: scala.List[BaseRule], matchers: scala.List[Matcher], rulesRefreshed: Option[Boolean] = None,
+        rulesIngested: Option[Int] = None, errors: List[String] = List.empty)(implicit req: RequestHeader)
+@main(title = "Typerighter", breadcrumbsList = List("Rules")) {
+    @form(CSRF(routes.RulesController.refresh())) {
+        @CSRF.formField
+        <h1 class="align-middle mb-4">
+            Current rules
+            <button class="btn btn-primary btn-sm ml-3">Refresh rules</button>
+        </h1>
+    }
+    @if(rulesRefreshed.isInstanceOf[Some[Boolean]] ) {
+        <div class="alert alert-@if(errors != Nil) {danger} else {success}" role="alert">
+            @if(rulesRefreshed == Some(true)){
+                Rules were refreshed, @rulesIngested.getOrElse("No") found. These rules will be available within a minute. @if(errors != Nil) {Errors found: @errors.size}
+            } else {
+                Rules were not refreshed due to errors. @if(errors != Nil) {Errors found: @errors.size}
+            }
+            <ul>
+                @for(error <- errors) {
+                    <li>@error</li>
+                }
+            </ul>
+        </div>
+    }
+    <div class="row">
+        <div class="col-sm-5">
+            <h5>Matchers (@matchers.size)</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">Id</th>
+                        <th scope="col">Categories</th>
+                        <th scope="col">Rule count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @for(matcher <- matchers) {
+                    <tr>
+                        <td>
+                          @matcher.getType()
+                        </td>
+                        <td>@matcher.getCategories().map(_.id).mkString(", ")</td>
+                        <td>@matcher.getRules().size</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-sm-7">
+            <h5>Rules (@rules.length)</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">Type</th>
+                        <th scope="col">ID</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Match</th>
+                        <th scope="col">Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @for(rule <- rules) {
+                    <tr>
+                        <td>@rule match {
+                          case r: RegexRule => { regex }
+                          case r: LTRule => { languagetool }
+                          case _ => { unknown }
+                        }
+                        </td>
+                        <td>
+                          @rule.id
+                        </td>
+                        <td>
+                          @rule.category.name
+                        </td>
+                        <td>@rule match {
+                          case r: RegexRule => {
+                            @r.regex.toString.slice(0, 30)
+                          }
+                          case _ => { N/A }
+                        }</td>
+                        <td>@if(rule.description.nonEmpty) {
+                            @rule.description
+                        } else { None }</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
