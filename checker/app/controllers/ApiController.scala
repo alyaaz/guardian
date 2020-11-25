@@ -3,7 +3,7 @@ package controllers
 import akka.stream.scaladsl.{Flow, Sink, Source}
 import scala.collection.JavaConverters._
 import com.gu.pandomainauth.PublicSettings
-import model.{Check, MatcherResponse}
+import model.{Check, CheckResponse}
 import actor.{WsCheckActor}
 import play.api.Logger
 import play.api.libs.json.{JsValue, Json}
@@ -39,7 +39,7 @@ class ApiController(
 
         eventuallyMatches.map {
           case (categoryIds, matches) => {
-            val response = MatcherResponse(
+            val response = CheckResponse(
               matches = matches,
               blocks = check.blocks,
               categoryIds = categoryIds

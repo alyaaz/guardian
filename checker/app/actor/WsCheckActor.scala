@@ -1,6 +1,6 @@
 package actor
 
-import model.{Check, CheckResult, MatcherWorkComplete, MatcherError}
+import model.{Check, CheckResult, CheckComplete, CheckError}
 import play.api.libs.json.{JsValue, Json}
 import services.{MatcherPool}
 
@@ -10,8 +10,9 @@ import play.api.libs.json.JsResult
 import play.api.libs.json.JsSuccess
 import akka.stream.scaladsl.Sink
 import akka.stream.Materializer
-import model.MatcherResponse
+import model.CheckResponse
 import model.RuleMatch
+import play.api.libs.json.JsError
 
 object WsCheckActor {
   def props(out: ActorRef, pool: MatcherPool)(implicit ec: ExecutionContext, mat: Materializer) = Props(new WsCheckActor(out, pool))
@@ -22,16 +23,19 @@ class WsCheckActor(out: ActorRef, pool: MatcherPool)(implicit ec: ExecutionConte
     case jsValue: JsValue =>
       jsValue.validate[Check] match {
         case JsSuccess(check, _) =>
-          pool.checkStream(check)
+          val eventuallyStreamComplete = pool.checkStream(check)
             .map(out ! streamResultToResponse(_))
-            .to(Sink.ignore)
-            .run()
-        case _ =>
-          out ! Json.toJson(MatcherError("Error parsing input"))
+            .runWith(Sink.seq)
+
+          eventuallyStreamComplete.map { _ => out ! streamComplete }
+        case JsError(error) =>
+          out ! Json.toJson(CheckError(s"Error parsing input: ${error.toString}"))
           out ! PoisonPill
       }
   }
 
   def streamResultToResponse(result: CheckResult) =
-    Json.toJson(MatcherResponse.fromCheckResult(result))
+    Json.toJson(CheckResponse.fromCheckResult(result))
+
+  def streamComplete = Json.toJson(CheckComplete())
 }
