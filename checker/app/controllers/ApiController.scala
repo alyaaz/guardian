@@ -27,6 +27,7 @@ class ApiController(
 )(implicit ec: ExecutionContext, mat: Materializer, system: ActorSystem) extends AbstractController(cc) with PandaAuthentication {
 
   def check: Action[JsValue] = ApiAuthAction.async(parse.json) { request =>
+
     request.body.validate[Check].asEither match {
       case Right(check) =>
         val checkMarkers = check.toMarker
@@ -55,13 +56,14 @@ class ApiController(
     }
   }
 
-  def checkStream = WebSocket.accept[JsValue, JsValue] { request =>
-    ActorFlow.actorRef { out =>
-      WsCheckActor.props(out, matcherPool)
+  def checkStream = WebSocket.acceptOrResult[JsValue, JsValue] { request =>
+    ApiAuthAction.toSocket(request) { (u, r) => ActorFlow.actorRef { out =>
+        WsCheckActor.props(out, matcherPool)
+      }
     }
   }
 
-  def getCurrentCategories: Action[AnyContent] = ApiAuthAction {
-      Ok(Json.toJson(matcherPool.getCurrentCategories))
+  def getCurrentCategories: Action[AnyContent] = ApiAuthAction { request =>
+    Ok(Json.toJson(matcherPool.getCurrentCategories))
   }
 }
