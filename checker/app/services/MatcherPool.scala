@@ -95,7 +95,7 @@ class MatcherPool(
     * Check the text with the matchers assigned to the given category ids.
     * If no ids are assigned, use all the currently available matchers.
     */
-  def check(query: Check): Future[(Set[CategoryId], List[RuleMatch])] = {
+  def check(query: Check): Future[CheckResult] = {
     val categoryIds = query.categoryIds match {
       case None => getCurrentCategories.map(_.id)
       case Some(ids) => ids
@@ -112,9 +112,14 @@ class MatcherPool(
 
     val eventuallyResponses = jobs.map(offerJobToQueue)
 
-    Future.sequence(eventuallyResponses).map { matchesPerFuture =>
-      logger.info(s"Matcher pool query complete")(query.toMarker)
-      (categoryIds, matchesPerFuture.map(_._2).flatten)
+    Future.sequence(eventuallyResponses).map { responses =>
+        val (catIds, blocks, matches) = responses.foldLeft((Set.empty[String], List.empty[TextBlock], List.empty[RuleMatch])) {
+          case ((accCatIds, accBlocks, accMatches), (job, matches)) =>
+            (accCatIds ++ job.categoryIds, accBlocks ++ job.blocks, accMatches ++ matches)
+        }
+
+        logger.info(s"Matcher pool query complete")(query.toMarker)
+        CheckResult(catIds, blocks, matches)
     }
   }
 

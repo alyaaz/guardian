@@ -27,38 +27,25 @@ class ApiController(
 )(implicit ec: ExecutionContext, mat: Materializer, system: ActorSystem) extends AbstractController(cc) with PandaAuthentication {
 
   def check: Action[JsValue] = ApiAuthAction.async(parse.json) { request =>
-
     request.body.validate[Check].asEither match {
       case Right(check) =>
-        val checkMarkers = check.toMarker
-        val userMarkers = Markers.appendEntries(Map("userEmail" -> request.user.email).asJava)
-        checkMarkers.add(userMarkers)
-
-        val eventuallyMatches = Timer.timeAsync("ApiController.check", checkMarkers) {
+        val eventuallyResult = Timer.timeAsync("ApiController.check", check.toMarker(request.user)) {
           matcherPool.check(check)
         }
 
-        eventuallyMatches.map {
-          case (categoryIds, matches) => {
-            val response = CheckResponse(
-              matches = matches,
-              blocks = check.blocks,
-              categoryIds = categoryIds
-            )
-            Ok(Json.toJson(response))
-          }
+        eventuallyResult.map { result =>
+          Ok(Json.toJson(CheckResponse.fromCheckResult(result)))
         } recover {
-        case e: Exception =>
-          InternalServerError(Json.obj("error" -> e.getMessage))
-      }
-      case Left(error) =>
-        Future.successful(BadRequest(s"Invalid request: $error"))
+          case e: Exception => InternalServerError(Json.obj("error" -> e.getMessage))
+        }
+      case Left(error) => Future.successful(BadRequest(s"Invalid request: $error"))
     }
   }
 
-  def checkStream = WebSocket.acceptOrResult[JsValue, JsValue] { request =>
-    ApiAuthAction.toSocket(request) { (u, r) => ActorFlow.actorRef { out =>
-        WsCheckActor.props(out, matcherPool)
+  def checkStream = WebSocket.acceptOrResult[String, String] { request =>
+    ApiAuthAction.toSocket(request) { (user, _) =>
+      ActorFlow.actorRef { out =>
+        WsCheckActor.props(out, matcherPool, user)
       }
     }
   }
