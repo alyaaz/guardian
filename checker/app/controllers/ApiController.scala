@@ -42,7 +42,7 @@ class ApiController(
     }
   }
 
-  def checkStream = WebSocket.acceptOrResult[String, String] { request =>
+  def checkStream = WebSocket.acceptOrResult[JsValue, JsValue] { request =>
     ApiAuthAction.toSocket(request) { (user, _) =>
       ActorFlow.actorRef { out =>
         WsCheckActor.props(out, matcherPool, user)
